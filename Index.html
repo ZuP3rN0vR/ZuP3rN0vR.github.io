@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Discord Webhook Sender</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* [Previous CSS styles remain exactly the same] */
+        
+        /* Add these new styles */
+        .json-preview {
+            background-color: var(--discord-darker);
+            border-radius: 4px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            margin-top: 16px;
+            border: 1px solid var(--discord-darkest);
+        }
+        
+        .json-preview-container {
+            position: relative;
+        }
+        
+        .copy-json-btn {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background-color: var(--discord-primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+        
+        .copy-json-btn:hover {
+            background-color: var(--discord-primary-hover);
+        }
+        
+        .json-key {
+            color: #f92672;
+        }
+        
+        .json-string {
+            color: #a6e22e;
+        }
+        
+        .json-number {
+            color: #ae81ff;
+        }
+        
+        .json-boolean {
+            color: #ae81ff;
+        }
+        
+        .json-null {
+            color: #ae81ff;
+        }
+    </style>
+</head>
+<body>
+    <!-- [Previous HTML remains the same until the advanced tab content] -->
+    
+    <div class="tab-content" id="advanced-tab">
+        <div class="checkbox-group">
+            <input type="checkbox" id="wait" checked>
+            <label for="wait">Wait for message delivery (required for editing)</label>
+        </div>
+        
+        <div class="checkbox-group">
+            <input type="checkbox" id="thread-id">
+            <label for="thread-id">Send to thread</label>
+            <input type="text" id="thread-id-value" placeholder="Thread ID" class="hidden" style="margin-top: 8px;">
+        </div>
+        
+        <div class="form-group">
+            <label for="payload-json">Raw JSON Payload (overrides all other settings)</label>
+            <textarea id="payload-json" placeholder='{"content": "Hello, world!"}'></textarea>
+        </div>
+
+        <h3>JSON Payload Preview</h3>
+        <div class="json-preview-container">
+            <button class="copy-json-btn" id="copy-json-btn">Copy JSON</button>
+            <div class="json-preview" id="json-preview">
+                {"content":"Your JSON payload will appear here"}
+            </div>
+        </div>
+
+        <div class="message-info" id="message-info" style="display: none;">
+            <h3>Message Information</h3>
+            <p><strong>Message ID:</strong> <span id="message-id"></span></p>
+            <p><strong>Channel ID:</strong> <span id="channel-id"></span></p>
+            <p><strong>Sent at:</strong> <span id="sent-time"></span></p>
+        </div>
+    </div>
+    
+    <!-- [Rest of the HTML remains the same] -->
+
+    <script>
+        // [Previous JavaScript remains the same until the DOMContentLoaded event]
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // [Previous event listeners remain the same]
+            
+            // Add input listeners for JSON preview updates
+            const jsonPreviewInputs = [
+                'content', 'username', 'avatar-url', 'tts', 'embed-title', 'embed-description',
+                'embed-url', 'embed-color', 'embed-author-name', 'embed-author-url',
+                'embed-author-icon', 'embed-footer-text', 'embed-footer-icon', 'embed-image',
+                'embed-thumbnail', 'embed-timestamp', 'payload-json'
+            ];
+            
+            jsonPreviewInputs.forEach(id => {
+                document.getElementById(id).addEventListener('input', updateJsonPreview);
+                document.getElementById(id).addEventListener('change', updateJsonPreview);
+            });
+            
+            // Add listener for field changes (for embed fields)
+            document.addEventListener('input', function(e) {
+                if (e.target.classList.contains('field-name') || 
+                    e.target.classList.contains('field-value') ||
+                    e.target.classList.contains('field-inline')) {
+                    updateJsonPreview();
+                }
+            });
+            
+            // Copy JSON button
+            document.getElementById('copy-json-btn').addEventListener('click', function() {
+                const jsonText = document.getElementById('json-preview').textContent;
+                navigator.clipboard.writeText(jsonText).then(() => {
+                    const originalText = this.textContent;
+                    this.textContent = 'Copied!';
+                    setTimeout(() => {
+                        this.textContent = originalText;
+                    }, 2000);
+                });
+            });
+            
+            // Initial updates
+            updatePreview();
+            updateJsonPreview();
+        });
+        
+        // [Keep all previous functions until here, then add these new functions]
+        
+        function updateJsonPreview() {
+            const payload = buildPayload();
+            const jsonPreview = document.getElementById('json-preview');
+            
+            // Format the JSON with syntax highlighting
+            const formattedJson = syntaxHighlight(JSON.stringify(payload, null, 2));
+            jsonPreview.innerHTML = formattedJson;
+        }
+        
+        function syntaxHighlight(json) {
+            if (!json) return '';
+            
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(
+                /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+                function (match) {
+                    let cls = 'json-number';
+                    if (/^"/.test(match)) {
+                        if (/:$/.test(match)) {
+                            cls = 'json-key';
+                        } else {
+                            cls = 'json-string';
+                        }
+                    } else if (/true|false/.test(match)) {
+                        cls = 'json-boolean';
+                    } else if (/null/.test(match)) {
+                        cls = 'json-null';
+                    }
+                    return '<span class="' + cls + '">' + match + '</span>';
+                }
+            );
+        }
+        
+        // [Keep all remaining previous functions]
+    </script>
+</body>
+</html>
