@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Advanced Discord Webhook Sender</title>
+    <title>Ultimate Discord Webhook Sender</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -560,11 +560,57 @@
         .json-null {
             color: #ae81ff;
         }
+
+        /* Avatar Preview Styles */
+        .avatar-preview-container {
+            display: flex;
+            align-items: center;
+            margin-top: 8px;
+        }
+        
+        .avatar-preview {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 10px;
+            object-fit: cover;
+        }
+        
+        .user-lookup {
+            display: flex;
+            margin-top: 8px;
+        }
+        
+        .user-lookup input {
+            flex: 1;
+            margin-right: 8px;
+        }
+        
+        .user-lookup button {
+            padding: 0 12px;
+        }
+        
+        .avatar-loading {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background-color: var(--discord-darker);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 10px;
+        }
+        
+        .avatar-loading .loading {
+            margin: 0;
+            width: 20px;
+            height: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="panel">
-        <h1>Discord Webhook Sender</h1>
+        <h1>Ultimate Discord Webhook Sender</h1>
         
         <div class="tabs">
             <div class="tab active" data-tab="basic">Basic</div>
@@ -586,6 +632,17 @@
             <div class="form-group">
                 <label for="avatar-url">Avatar URL (override)</label>
                 <input type="text" id="avatar-url" placeholder="Leave empty to use webhook default">
+                <div class="avatar-preview-container">
+                    <img id="avatar-preview" class="avatar-preview" style="display: none;">
+                    <div id="avatar-loading" class="avatar-loading" style="display: none;">
+                        <div class="loading"></div>
+                    </div>
+                    <span id="avatar-preview-text">No avatar selected</span>
+                </div>
+                <div class="user-lookup">
+                    <input type="text" id="user-id-input" placeholder="Enter User ID to copy profile">
+                    <button class="btn btn-secondary" id="fetch-user-btn">Fetch</button>
+                </div>
             </div>
             
             <div class="form-group">
@@ -750,6 +807,7 @@
     <script>
         // Store message information for editing
         let currentMessage = null;
+        let fieldCount = 0;
 
         document.addEventListener('DOMContentLoaded', function() {
             // Tab switching
@@ -845,53 +903,41 @@
             // Add embed field
             const addFieldBtn = document.getElementById('add-field-btn');
             const fieldsContainer = document.getElementById('embed-fields-container');
-            let fieldCount = 0;
             
             addFieldBtn.addEventListener('click', function() {
-                const fieldId = `field-${fieldCount++}`;
-                const fieldHtml = `
-                    <div class="field-array-item" id="${fieldId}">
-                        <button class="remove-btn" data-field="${fieldId}">×</button>
-                        <div class="form-group">
-                            <label for="${fieldId}-name">Field Name</label>
-                            <input type="text" id="${fieldId}-name" placeholder="Field name" class="field-name">
-                        </div>
-                        <div class="form-group">
-                            <label for="${fieldId}-value">Field Value</label>
-                            <textarea id="${fieldId}-value" placeholder="Field value (supports markdown)" class="field-value"></textarea>
-                        </div>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="${fieldId}-inline" class="field-inline">
-                            <label for="${fieldId}-inline">Inline</label>
-                        </div>
-                    </div>
-                `;
-                fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
-                
-                // Add event listeners to new fields
-                document.querySelectorAll(`#${fieldId} .field-name, #${fieldId} .field-value, #${fieldId} .field-inline`).forEach(el => {
-                    el.addEventListener('input', function() {
-                        updatePreview();
-                        updateJsonPreview();
-                    });
-                });
-                
-                // Add remove button functionality
-                document.querySelector(`[data-field="${fieldId}"]`).addEventListener('click', function() {
-                    document.getElementById(fieldId).remove();
-                    updatePreview();
-                    updateJsonPreview();
-                });
-                
+                addEmbedField('', '', false);
+            });
+            
+            // Avatar URL input with preview
+            const avatarUrlInput = document.getElementById('avatar-url');
+            avatarUrlInput.addEventListener('input', function() {
+                updateAvatarPreview(this.value);
                 updatePreview();
                 updateJsonPreview();
+            });
+            
+            // User ID lookup
+            document.getElementById('fetch-user-btn').addEventListener('click', fetchUserProfile);
+            document.getElementById('user-id-input').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') fetchUserProfile();
+            });
+            
+            // JSON input sync with form
+            document.getElementById('payload-json').addEventListener('input', function() {
+                try {
+                    const json = JSON.parse(this.value);
+                    updateFormFromJson(json);
+                    updatePreview();
+                } catch (e) {
+                    // Don't update if JSON is invalid
+                }
             });
             
             // Input events for preview updates
             const previewInputs = [
                 'webhook-url', 'username', 'avatar-url', 'content', 'embed-title', 'embed-description',
                 'embed-url', 'embed-author-name', 'embed-author-url', 'embed-author-icon',
-                'embed-footer-text', 'embed-footer-icon', 'embed-image', 'embed-thumbnail', 'payload-json'
+                'embed-footer-text', 'embed-footer-icon', 'embed-image', 'embed-thumbnail'
             ];
             
             previewInputs.forEach(id => {
@@ -935,6 +981,9 @@
                     document.getElementById('message-info').style.display = 'none';
                     document.getElementById('edit-btn').disabled = true;
                     currentMessage = null;
+                    document.getElementById('avatar-preview').style.display = 'none';
+                    document.getElementById('avatar-loading').style.display = 'none';
+                    document.getElementById('avatar-preview-text').textContent = 'No avatar selected';
                 }
             });
             
@@ -949,6 +998,47 @@
             updateJsonPreview();
         });
         
+        function addEmbedField(name, value, inline) {
+            const fieldId = `field-${fieldCount++}`;
+            const fieldsContainer = document.getElementById('embed-fields-container');
+            const fieldHtml = `
+                <div class="field-array-item" id="${fieldId}">
+                    <button class="remove-btn" data-field="${fieldId}">×</button>
+                    <div class="form-group">
+                        <label for="${fieldId}-name">Field Name</label>
+                        <input type="text" id="${fieldId}-name" placeholder="Field name" class="field-name" value="${name || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label for="${fieldId}-value">Field Value</label>
+                        <textarea id="${fieldId}-value" placeholder="Field value (supports markdown)" class="field-value">${value || ''}</textarea>
+                    </div>
+                    <div class="checkbox-group">
+                        <input type="checkbox" id="${fieldId}-inline" class="field-inline" ${inline ? 'checked' : ''}>
+                        <label for="${fieldId}-inline">Inline</label>
+                    </div>
+                </div>
+            `;
+            fieldsContainer.insertAdjacentHTML('beforeend', fieldHtml);
+            
+            // Add event listeners to new fields
+            document.querySelectorAll(`#${fieldId} .field-name, #${fieldId} .field-value, #${fieldId} .field-inline`).forEach(el => {
+                el.addEventListener('input', function() {
+                    updatePreview();
+                    updateJsonPreview();
+                });
+            });
+            
+            // Add remove button functionality
+            document.querySelector(`[data-field="${fieldId}"]`).addEventListener('click', function() {
+                document.getElementById(fieldId).remove();
+                updatePreview();
+                updateJsonPreview();
+            });
+            
+            updatePreview();
+            updateJsonPreview();
+        }
+        
         function updatePreview() {
             // Update message content preview
             const content = document.getElementById('content').value;
@@ -960,9 +1050,18 @@
             const usernamePreview = document.querySelector('.discord-username');
             usernamePreview.textContent = username || 'Discord Webhook';
             
-            // Update avatar preview (just using first letter for simplicity)
+            // Update avatar preview
+            const avatarUrl = document.getElementById('avatar-url').value;
             const avatarPreview = document.querySelector('.discord-avatar');
-            avatarPreview.textContent = username ? username.charAt(0).toUpperCase() : 'D';
+            if (avatarUrl) {
+                avatarPreview.textContent = '';
+                avatarPreview.style.backgroundImage = `url('${avatarUrl}')`;
+                avatarPreview.style.backgroundSize = 'cover';
+            } else {
+                avatarPreview.style.backgroundImage = 'none';
+                avatarPreview.textContent = username ? username.charAt(0).toUpperCase() : 'D';
+                avatarPreview.style.backgroundColor = '#5865f2';
+            }
             
             // Update embed preview
             const embedPreview = document.getElementById('preview-embed');
@@ -1127,6 +1226,178 @@
             const sizes = ['Bytes', 'KB', 'MB', 'GB'];
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+        
+        function updateAvatarPreview(url) {
+            const avatarPreview = document.getElementById('avatar-preview');
+            const avatarPreviewText = document.getElementById('avatar-preview-text');
+            const avatarLoading = document.getElementById('avatar-loading');
+            
+            if (url && url.trim() !== '') {
+                avatarPreview.src = url;
+                avatarPreview.onload = function() {
+                    avatarPreview.style.display = 'block';
+                    avatarPreviewText.textContent = '';
+                    avatarLoading.style.display = 'none';
+                };
+                avatarPreview.onerror = function() {
+                    avatarPreview.style.display = 'none';
+                    avatarPreviewText.textContent = 'Invalid image URL';
+                    avatarLoading.style.display = 'none';
+                };
+                avatarPreview.style.display = 'none';
+                avatarPreviewText.textContent = 'Loading...';
+                avatarLoading.style.display = 'flex';
+            } else {
+                avatarPreview.style.display = 'none';
+                avatarLoading.style.display = 'none';
+                avatarPreviewText.textContent = 'No avatar selected';
+            }
+        }
+        
+        async function fetchUserProfile() {
+            const userId = document.getElementById('user-id-input').value.trim();
+            if (!userId) return;
+            
+            const statusElement = document.getElementById('status');
+            statusElement.classList.remove('success', 'error');
+            statusElement.textContent = 'Fetching user profile...';
+            
+            try {
+                // Note: This requires a proxy server or CORS-enabled Discord API endpoint
+                // This is just a placeholder - you'll need to implement your own backend for this
+                const response = await fetch(`https://discordlookup.mesavirep.xyz/v1/user/${userId}`);
+                
+                if (response.ok) {
+                    const user = await response.json();
+                    
+                    // Update username and avatar
+                    document.getElementById('username').value = user.username;
+                    document.getElementById('avatar-url').value = user.avatar 
+                        ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=256`
+                        : `https://cdn.discordapp.com/embed/avatars/${user.discriminator % 5}.png`;
+                    updateAvatarPreview(document.getElementById('avatar-url').value);
+                    
+                    statusElement.textContent = `Fetched profile for ${user.username}`;
+                    statusElement.className = 'status success';
+                    
+                    updatePreview();
+                    updateJsonPreview();
+                } else {
+                    throw new Error('User not found or error fetching profile');
+                }
+            } catch (error) {
+                statusElement.textContent = `Error: ${error.message}`;
+                statusElement.className = 'status error';
+                console.error('Error fetching user:', error);
+            }
+        }
+        
+        function updateFormFromJson(json) {
+            try {
+                // Basic fields
+                if (json.content !== undefined) document.getElementById('content').value = json.content;
+                if (json.username !== undefined) document.getElementById('username').value = json.username;
+                if (json.avatar_url !== undefined) {
+                    document.getElementById('avatar-url').value = json.avatar_url;
+                    updateAvatarPreview(json.avatar_url);
+                }
+                if (json.tts !== undefined) document.getElementById('tts').checked = json.tts;
+                
+                // Handle embeds if they exist
+                if (json.embeds && json.embeds.length > 0) {
+                    const embed = json.embeds[0];
+                    
+                    // Embed basic fields
+                    if (embed.title !== undefined) document.getElementById('embed-title').value = embed.title;
+                    if (embed.description !== undefined) document.getElementById('embed-description').value = embed.description;
+                    if (embed.url !== undefined) document.getElementById('embed-url').value = embed.url;
+                    
+                    // Embed color
+                    if (embed.color !== undefined) {
+                        const hexColor = `#${embed.color.toString(16).padStart(6, '0')}`;
+                        document.getElementById('embed-color').value = hexColor;
+                        document.getElementById('color-preview').style.backgroundColor = hexColor;
+                    }
+                    
+                    // Timestamp
+                    if (embed.timestamp !== undefined) {
+                        document.getElementById('embed-timestamp').value = 'custom';
+                        document.getElementById('embed-custom-timestamp').classList.remove('hidden');
+                        const date = new Date(embed.timestamp);
+                        const formattedDate = date.toISOString().slice(0, 16);
+                        document.getElementById('embed-custom-timestamp').value = formattedDate;
+                    } else {
+                        document.getElementById('embed-timestamp').value = 'none';
+                        document.getElementById('embed-custom-timestamp').classList.add('hidden');
+                    }
+                    
+                    // Author
+                    if (embed.author) {
+                        if (embed.author.name !== undefined) document.getElementById('embed-author-name').value = embed.author.name;
+                        if (embed.author.url !== undefined) document.getElementById('embed-author-url').value = embed.author.url;
+                        if (embed.author.icon_url !== undefined) document.getElementById('embed-author-icon').value = embed.author.icon_url;
+                    } else {
+                        document.getElementById('embed-author-name').value = '';
+                        document.getElementById('embed-author-url').value = '';
+                        document.getElementById('embed-author-icon').value = '';
+                    }
+                    
+                    // Footer
+                    if (embed.footer) {
+                        if (embed.footer.text !== undefined) document.getElementById('embed-footer-text').value = embed.footer.text;
+                        if (embed.footer.icon_url !== undefined) document.getElementById('embed-footer-icon').value = embed.footer.icon_url;
+                    } else {
+                        document.getElementById('embed-footer-text').value = '';
+                        document.getElementById('embed-footer-icon').value = '';
+                    }
+                    
+                    // Image and thumbnail
+                    if (embed.image && embed.image.url !== undefined) {
+                        document.getElementById('embed-image').value = embed.image.url;
+                    } else {
+                        document.getElementById('embed-image').value = '';
+                    }
+                    
+                    if (embed.thumbnail && embed.thumbnail.url !== undefined) {
+                        document.getElementById('embed-thumbnail').value = embed.thumbnail.url;
+                    } else {
+                        document.getElementById('embed-thumbnail').value = '';
+                    }
+                    
+                    // Fields
+                    if (embed.fields && embed.fields.length > 0) {
+                        // Clear existing fields
+                        document.getElementById('embed-fields-container').innerHTML = '';
+                        fieldCount = 0;
+                        
+                        // Add new fields from JSON
+                        embed.fields.forEach(field => {
+                            addEmbedField(field.name, field.value, field.inline);
+                        });
+                    } else {
+                        // Clear fields if none in JSON
+                        document.getElementById('embed-fields-container').innerHTML = '';
+                        fieldCount = 0;
+                    }
+                } else {
+                    // Clear embed fields if no embeds in JSON
+                    document.getElementById('embed-title').value = '';
+                    document.getElementById('embed-description').value = '';
+                    document.getElementById('embed-url').value = '';
+                    document.getElementById('embed-author-name').value = '';
+                    document.getElementById('embed-author-url').value = '';
+                    document.getElementById('embed-author-icon').value = '';
+                    document.getElementById('embed-footer-text').value = '';
+                    document.getElementById('embed-footer-icon').value = '';
+                    document.getElementById('embed-image').value = '';
+                    document.getElementById('embed-thumbnail').value = '';
+                    document.getElementById('embed-fields-container').innerHTML = '';
+                    fieldCount = 0;
+                }
+            } catch (e) {
+                console.error('Error updating form from JSON:', e);
+            }
         }
         
         async function sendWebhook() {
